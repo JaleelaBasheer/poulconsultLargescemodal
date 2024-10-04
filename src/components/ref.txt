@@ -1,0 +1,48 @@
+  // Mouse move handler for raycasting
+  const handleMouseMove = (event) => {
+    if (!cameraRef.current || !sceneRef.current) return;
+
+    // Convert mouse position to normalized device coordinates
+    mouseRef.current.x = (event.clientX / window.innerWidth) * 2 - 1;
+    mouseRef.current.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+    raycasterRef.current.setFromCamera(mouseRef.current, cameraRef.current);
+
+    const intersects = raycasterRef.current.intersectObjects(sceneRef.current.children, true);
+
+    if (intersects.length > 0) {
+      const intersectedObject = intersects[0].object;
+      console.log(intersectedObject)
+      if (intersectedObject !== lastHoveredMeshRef.current) {
+        // Restore previously removed mesh
+        if (removedMeshRef.current) {
+          sceneRef.current.add(removedMeshRef.current);
+          setVisibleMeshCount(prev => prev + 1);
+        }
+
+        // Remove newly intersected mesh
+        sceneRef.current.remove(intersectedObject);
+        removedMeshRef.current = intersectedObject;
+        lastHoveredMeshRef.current = intersectedObject;
+        setVisibleMeshCount(prev => prev - 1);
+      }
+    } else {
+      // If no intersection, restore the removed mesh
+      if (removedMeshRef.current) {
+        sceneRef.current.add(removedMeshRef.current);
+        removedMeshRef.current = null;
+        lastHoveredMeshRef.current = null;
+        setVisibleMeshCount(prev => prev + 1);
+      }
+    }
+  };
+
+  // Add event listener for mouse move
+  useEffect(() => {
+    const handleMouseMoveCallback = handleMouseMove;
+    window.addEventListener('click', handleMouseMoveCallback);
+
+    return () => {
+      window.removeEventListener('click', handleMouseMoveCallback);
+    };
+  }, []);
