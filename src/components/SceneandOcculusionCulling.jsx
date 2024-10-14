@@ -109,13 +109,14 @@ const SceneandOcculusionCulling = () => {
   const fov = cameraRef.current.fov * (Math.PI / 180);
   let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
   cameraZ *= 1.5;
+  cameraRef.current.far=cameraZ+maxDim;
+  console.log(cameraRef.current);
 
   cameraRef.current.position.set(center.x, center.y, center.z + cameraZ);
   controlsRef.current.target.set(center.x, center.y, center.z);
   controlsRef.current.update();
-      setIsOctreeLoaded(true);
+      // setIsOctreeLoaded(true);
       setLoadingStatus('Data loaded. Ready for occlusion culling.');
-      performOcclusionCulling()
 
     } catch (error) {
       console.error('Error in loadAllData:', error);
@@ -124,6 +125,8 @@ const SceneandOcculusionCulling = () => {
     } finally {
       setIsLoading(false);
     }
+    performOcclusionCulling()
+
   };
 
 
@@ -155,8 +158,8 @@ const SceneandOcculusionCulling = () => {
       const octreeNodes = await getAllOctreeNodes();
       octreeRef.current = octreeNodes;
 
-    //   setLoadingStatus('Loading mesh data...');
-    //   const meshes = await getAllGlbMeshes();
+      setLoadingStatus('Loading mesh data...');
+      const meshes = await getAllGlbMeshes();
 
       if (!octreeNodes.length) throw new Error('No Octree nodes found in IndexedDB');
     //   if (!meshes.length) throw new Error('No meshes found in IndexedDB');
@@ -165,12 +168,12 @@ const SceneandOcculusionCulling = () => {
       const octreeVisualization = createOctreeVisualization(octreeNodes);
       sceneRef.current.add(octreeVisualization);
       octreeVisualizationRef.current = octreeVisualization;
-      octreeVisualizationRef.current.visible = showOctree;
+      // octreeVisualizationRef.current.visible = showOctree;
 
-    //   setLoadingStatus('Preparing mesh data...');
-    //   meshes.forEach((mesh) => {
-    //     meshesMapRef.current.set(mesh.uuid, mesh);
-    //   });
+      setLoadingStatus('Preparing mesh data...');
+      meshes.forEach((mesh) => {
+        meshesMapRef.current.set(mesh.uuid, mesh);
+      });
 
       // Camera adjustments
       const box = new THREE.Box3().setFromObject(octreeVisualization);
@@ -180,6 +183,8 @@ const SceneandOcculusionCulling = () => {
       const fov = cameraRef.current.fov * (Math.PI / 180);
       let cameraZ = Math.abs(maxDim / 2 / Math.tan(fov / 2));
       cameraZ *= 1.5;
+      // cameraRef.current.far.set(center.z+cameraZ);
+      console.log(cameraRef.current);
 
       cameraRef.current.position.set(center.x, center.y, center.z + cameraZ);
       controlsRef.current.target.set(center.x, center.y, center.z);
@@ -343,9 +348,9 @@ const [meshesToUnload, setMeshesToUnload] = useState(0);
 //   };
 
 
-// const handleCameraMove=()=>{
-//   performOcclusionCulling();
-// }
+const handleCameraMove=()=>{
+  performOcclusionCulling();
+}
 
 const performOcclusionCulling = async () => {
   if (!octreeRef.current || !meshesMapRef.current) {
@@ -468,7 +473,7 @@ const performOcclusionCulling = async () => {
         loadedMeshesRef.current.add(meshId);
         newMeshesCount++;
       } else {
-        console.error('Mesh not found:', meshId);
+        // console.error('Mesh not found:', meshId);
       }
     }
     visibleMeshCount++;
@@ -494,10 +499,196 @@ const debounce = (func, delay) => {
     debounceTimer = setTimeout(() => func.apply(context, args), delay);
   };
 };
+// const performOcclusionCulling = async () => {
+//   if (!octreeRef.current || !allMeshes) {
+//     console.warn('Octree or meshes not loaded yet. Skipping occlusion culling.');
+//     return [];
+//   }
 
-const handleCameraMove = debounce(() => {
-  performOcclusionCulling();
-}, 200);  
+//   const camera = cameraRef.current;
+//   const scene = sceneRef.current;
+//   const raycaster = new THREE.Raycaster();
+  
+//   let hitCount = 0;
+//   let unhitCount = 0;
+//   let visibleMeshCount = 0;
+//   let newMeshesCount = 0;
+//   let meshesToUnloadCount = 0;
+//   const visibleMeshIds = new Set();
+
+//   const generateRayDirections = () => {
+//     const directions = [];
+//     const angleStep = Math.PI / 30; // 6 degrees
+//     const phiRange = Math.PI * 0.6; // 108 degrees vertical range
+//     const thetaRange = Math.PI * 0.6; // 108 degrees horizontal range
+
+//     for (let phi = -phiRange / 2; phi <= phiRange / 2; phi += angleStep) {
+//       for (let theta = -thetaRange / 2; theta <= thetaRange / 2; theta += angleStep) {
+//         const x = Math.sin(phi) * Math.cos(theta);
+//         const y = Math.sin(phi) * Math.sin(theta);
+//         const z = -Math.cos(phi);
+//         directions.push(new THREE.Vector3(x, y, z).normalize());
+//       }
+//     }
+
+//     return directions;
+//   };
+
+//   const rayDirections = generateRayDirections();
+//   const farDistance = 1000; // Adjust this value based on your scene scale
+
+//   const processMesh = (object) => {
+//     const meshId = object.userData.id;
+//     const mesh = allMeshes.get(meshId);
+
+//     if (!mesh) {
+//       console.error('Mesh not found:', meshId);
+//       return;
+//     }
+
+//     const size = object.userData.mesh.object.userData.size;
+//     const halfSize = size / 2;
+//     const meshBoundingBox = new THREE.Box3(
+//       new THREE.Vector3(
+//         object.position.x - halfSize,
+//         object.position.y - halfSize,
+//         object.position.z - halfSize
+//       ),
+//       new THREE.Vector3(
+//         object.position.x + halfSize,
+//         object.position.y + halfSize,
+//         object.position.z + halfSize
+//       )
+//     );
+
+//     let isMeshVisible = false;
+
+//     for (const direction of rayDirections) {
+//       raycaster.set(camera.position, direction);
+//       raycaster.far = farDistance;
+
+//       if (raycaster.ray.intersectsBox(meshBoundingBox)) {
+//         isMeshVisible = true;
+//         break;
+//       }
+//     }
+
+//     if (isMeshVisible) {
+//       hitCount++;
+//       visibleMeshIds.add(meshId);
+//       if (!scene.getObjectByProperty('uuid', meshId)) {
+//         newMeshesCount++;
+//       }
+//       visibleMeshCount++;
+//     } else {
+//       unhitCount++;
+//       if (scene.getObjectByProperty('uuid', meshId)) {
+//         meshesToUnloadCount++;
+//       }
+//     }
+//   };
+
+//   return new Promise((resolve, reject) => {
+//     const worker = new Worker(new URL('./occulusionWorker.js', import.meta.url));
+
+//     worker.onmessage = (e) => {
+//       const { processedMeshes } = e.data;
+//       processedMeshes.forEach(processMesh);
+
+//       setHitNodes(hitCount);
+//       setUnhitNodes(unhitCount);
+//       setVisibleMeshCount(visibleMeshCount);
+//       setTotalMeshesInScene(scene.children.length);
+//       setNewMeshes(newMeshesCount);
+//       setMeshesToLoad(newMeshesCount);
+//       setMeshesToUnload(meshesToUnloadCount);
+
+//       resolve(Array.from(visibleMeshIds));
+//     };
+
+//     worker.onerror = (error) => {
+//       console.error('Error in occlusion culling worker:', error);
+//       reject(error);
+//     };
+
+//     worker.postMessage({
+//       octreeNodes: octreeRef.current,
+//       cameraPosition: camera.position,
+//       rayDirections: rayDirections,
+//       farDistance: farDistance
+//     });
+//   });
+// };
+
+// // Implement object pooling for mesh instances
+// const meshPool = new Map();
+
+// const getMeshFromPool = (meshId) => {
+//   if (!meshPool.has(meshId)) {
+//     const mesh = allMeshes.get(meshId).clone();
+//     meshPool.set(meshId, mesh);
+//   }
+//   return meshPool.get(meshId);
+// };
+
+// const updateScene = (visibleMeshIds) => {
+//   const scene = sceneRef.current;
+
+//   if (!scene) {
+//     console.error('Scene is not initialized');
+//     return;
+//   }
+
+//   // Remove all mesh children from the scene
+//   scene.children = scene.children.filter(child => {
+//     if (child instanceof THREE.Mesh) {
+//       scene.remove(child);
+//       return false;
+//     }
+//     return true;
+//   });
+
+//   // Add visible meshes to the scene
+//   visibleMeshIds.forEach(meshId => {
+//     try {
+//       const mesh = getMeshFromPool(meshId);
+//       if (mesh) {
+//         scene.add(mesh);
+//       } else {
+//         console.warn(`Mesh with id ${meshId} not found in pool`);
+//       }
+//     } catch (error) {
+//       console.error(`Error adding mesh ${meshId} to scene:`, error);
+//     }
+//   });
+// };
+
+
+// Update the handleCameraMove function
+// const handleCameraMove = debounce(() => {
+//   performOcclusionCulling()
+//     .then(visibleMeshIds => {
+//       if (Array.isArray(visibleMeshIds)) {
+//         updateScene(visibleMeshIds);
+//       } else {
+//         console.error('performOcclusionCulling did not return an array of visibleMeshIds');
+//       }
+//     })
+//     .catch(error => {
+//       console.error('Error in performOcclusionCulling:', error);
+//     });
+// }, 100);
+
+// Ensure sceneRef is properly initialized
+useEffect(() => {
+  if (!sceneRef.current) {
+    sceneRef.current = new THREE.Scene();
+  }
+}, []);
+
+
+
+
 
 
 

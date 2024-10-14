@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { MeshBVH, MeshBVHHelper } from 'three-mesh-bvh';
 import { getAllOctreeNodes, getAllGlbMeshes } from './OctreeAndGlbStore';
 
 const SceneLoader = () => {
@@ -49,7 +50,6 @@ const SceneLoader = () => {
     directionalLight.position.set(0, 1, 0);
     scene.add(directionalLight);
 
-
     return () => {
       if (mountRef.current) {
         mountRef.current.removeChild(renderer.domElement);
@@ -79,8 +79,10 @@ const SceneLoader = () => {
       }
 
       setLoadingStatus('Clearing existing meshes...');
-      // Clear existing meshes from the scene
-      sceneRef.current.children = sceneRef.current.children.filter(child => !(child instanceof THREE.Mesh));
+      // Clear existing meshes and helpers from the scene
+      sceneRef.current.children = sceneRef.current.children.filter(child => 
+        !(child instanceof THREE.Mesh) && !(child instanceof MeshBVHHelper)
+      );
 
       setLoadingStatus('Recreating Octree...');
       // Recreate Octree (simplified version)
@@ -89,8 +91,7 @@ const SceneLoader = () => {
         octree[node.id] = node;
       });
 
-      setLoadingStatus('Adding meshes to scene...');
-      // Add meshes to the scene based on Octree
+      setLoadingStatus('Adding meshes to scene and creating bounding boxes...');
       let addedMeshCount = 0;
       meshes.forEach((mesh, index) => {
         if (!mesh || !mesh.position) {
@@ -111,6 +112,16 @@ const SceneLoader = () => {
               sceneRef.current.add(mesh);
               addedMeshCount++;
               console.log(`Added mesh ${index} to scene at depth ${nodeDepth}`);
+              
+              // Create and add bounding box helper
+              const geometry = mesh.geometry;
+              const bvh = new MeshBVH(geometry);
+              const bvhHelper = new MeshBVHHelper(mesh, 10);
+              bvhHelper.displayParents = true;
+              bvhHelper.displayEdges = true;
+              bvhHelper.update();
+              sceneRef.current.add(bvhHelper);
+              
               break;
             } else {
               // Check children
@@ -124,6 +135,16 @@ const SceneLoader = () => {
                 console.warn(`No child node found for mesh ${index}, adding to current node`);
                 sceneRef.current.add(mesh);
                 addedMeshCount++;
+                
+                // Create and add bounding box helper
+                const geometry = mesh.geometry;
+                const bvh = new MeshBVH(geometry);
+                const bvhHelper = new MeshBVHHelper(mesh, 10);
+                bvhHelper.displayParents = true;
+                bvhHelper.displayEdges = true;
+                bvhHelper.update();
+                sceneRef.current.add(bvhHelper);
+                
                 break;
               }
             }
@@ -131,13 +152,19 @@ const SceneLoader = () => {
             console.warn(`Mesh ${index} not in node, adding to scene anyway`);
             sceneRef.current.add(mesh);
             addedMeshCount++;
+            // mesh.geometry.boundsTree = new MeshBVH(mesh.geometry);
+            // const bvhHelper = new MeshBVHHelper(mesh);
+            // sceneRef.current.add(bvhHelper);
+            // bvhHelper.visible = true;
+            // sceneRef.current.add(bvhHelper);
+            
             break;
           }
         }
       });
 
       console.log(`Added ${addedMeshCount} meshes to the scene`);
-      setLoadingStatus(`Loaded successfully. Added ${addedMeshCount} meshes to the scene.`);
+      setLoadingStatus(`Loaded successfully. Added ${addedMeshCount} meshes to the scene with bounding boxes.`);
 
       // Center camera on the scene
       const box = new THREE.Box3().setFromObject(sceneRef.current);
@@ -175,11 +202,10 @@ const SceneLoader = () => {
     return result;
   };
 
-
   return (
     <div>
       <div ref={mountRef} style={{ width: '100%', height: '100vh' }} />
-      <div style={{ position: 'absolute', bottom: '10px', left: '10px' }}>
+      <div style={{ position: 'absolute', top: '10px', right: '10px' }}>
         <button onClick={loadFromIndexedDB} disabled={isLoading}>
          <p style={{ color: 'red' }}>{isLoading ? 'Loading...' : 'Load from IndexedDB'}</p> 
         </button>

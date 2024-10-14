@@ -6,7 +6,7 @@ import * as THREE from 'three';
 const DB_NAME = 'OctreeGlbDB';
 const OCTREE_STORE = 'octreeNodes';
 const GLB_STORE = 'glbMeshes';
-const DB_VERSION = 2;
+const DB_VERSION = 4; // Increment the version to trigger an upgrade
 
 // Helper function to generate a valid ID for IndexedDB
 const generateValidId = (prefix, index) => `${prefix}_${index}`;
@@ -40,33 +40,49 @@ const deserializeNode = (data) => {
 
 // Helper function to serialize GLB mesh
 const serializeMesh = (mesh, index) => {
-  return {
+  if (!mesh) {
+    console.error(`Mesh at index ${index} is undefined`);
+    return null;
+  }
+
+  const serialized = {
     id: generateValidId('mesh', index),
-    name: mesh.name,
-    userData: JSON.parse(JSON.stringify(mesh.userData)),
-    geometry: {
-      type: mesh.geometry.type,
-      parameters: mesh.geometry.parameters,
-      attributes: Object.fromEntries(
-        Object.entries(mesh.geometry.attributes).map(([key, attr]) => [
-          key,
-          {
+    name: mesh.name || `Unnamed_Mesh_${index}`,
+    userData: JSON.parse(JSON.stringify(mesh.userData || {})),
+    position: mesh.position ? mesh.position.toArray() : [0, 0, 0],
+    rotation: mesh.rotation ? mesh.rotation.toArray() : [0, 0, 0],
+    scale: mesh.scale ? mesh.scale.toArray() : [1, 1, 1],
+  };
+
+  if (mesh.geometry) {
+    serialized.geometry = {
+      type: mesh.geometry.type || 'BufferGeometry',
+      parameters: mesh.geometry.parameters || {},
+      attributes: {}
+    };
+
+    if (mesh.geometry.attributes) {
+      Object.entries(mesh.geometry.attributes).forEach(([key, attr]) => {
+        if (attr && attr.array && attr.itemSize) {
+          serialized.geometry.attributes[key] = {
             array: Array.from(attr.array),
             itemSize: attr.itemSize,
             count: attr.count,
-          }
-        ])
-      )
-    },
-    material: {
-      type: mesh.material.type,
+          };
+        }
+      });
+    }
+  }
+
+  if (mesh.material) {
+    serialized.material = {
+      type: mesh.material.type || 'MeshBasicMaterial',
       color: mesh.material.color ? mesh.material.color.getHex() : null,
       // Add other material properties as needed
-    },
-    position: mesh.position.toArray(),
-    rotation: mesh.rotation.toArray(),
-    scale: mesh.scale.toArray(),
-  };
+    };
+  }
+
+  return serialized;
 };
 
 // Helper function to deserialize GLB mesh
@@ -140,19 +156,19 @@ const deserializeMesh = (data) => {
     return mesh;
   };
 
-export const storeOctreeNode = async (node, index) => {
-  const db = await openDB(DB_NAME, DB_VERSION);
-  const serializedNode = serializeNode(node, index);
-  await db.put(OCTREE_STORE, serializedNode);
-  db.close();
-};
-
-export const getOctreeNode = async (nodeId) => {
-  const db = await openDB(DB_NAME, DB_VERSION);
-  const node = await db.get(OCTREE_STORE, nodeId);
-  db.close();
-  return node ? deserializeNode(node) : null;
-};
+  export const storeOctreeNode = async (node, index) => {
+    const db = await initializeDatabase();
+    const serializedNode = serializeNode(node, index);
+    await db.put(OCTREE_STORE, serializedNode);
+    db.close();
+  };
+  
+  export const getOctreeNode = async (nodeId) => {
+    const db = await initializeDatabase();
+    const node = await db.get(OCTREE_STORE, nodeId);
+    db.close();
+    return node ? deserializeNode(node) : null;
+  };
 
 export const getAllOctreeNodes = async () => {
   const db = await openDB(DB_NAME, DB_VERSION);
@@ -236,55 +252,76 @@ export const getAllGlbMeshes = async () => {
     console.log(`Retrieved mesh data for userData.id: ${userDataId}`); // Debug log
     return deserializeMesh(foundMeshData);
   };
-  
-  
-
-const OctreeAndGlbStore = ({ octreeRoot, glbMeshes }) => {
-  useEffect(() => {
-    const initDB = async () => {
-      const db = await openDB(DB_NAME, DB_VERSION, {
-        upgrade(db, oldVersion, newVersion, transaction) {
-          if (!db.objectStoreNames.contains(OCTREE_STORE)) {
-            db.createObjectStore(OCTREE_STORE, { keyPath: 'id' });
-          }
-          if (!db.objectStoreNames.contains(GLB_STORE)) {
-            db.createObjectStore(GLB_STORE, { keyPath: 'id' });
-          }
-          if (oldVersion < 2) {
-            transaction.objectStore(OCTREE_STORE).clear();
-            transaction.objectStore(GLB_STORE).clear();
-          }
-        },
-      });
-
-      // Store Octree nodes
-      if (octreeRoot) {
-        let nodeIndex = 0;
-        const storeNode = async (node) => {
-          await storeOctreeNode(node, nodeIndex++);
-          if (node.children) {
-            for (const child of node.children) {
-              await storeNode(child);
-            }
-          }
-        };
-        await storeNode(octreeRoot);
-      }
-
-      // Store GLB meshes
-      if (glbMeshes && glbMeshes.length > 0) {
-        for (let i = 0; i < glbMeshes.length; i++) {
-          await storeGlbMesh(glbMeshes[i], i);
+  const initializeDatabase = async () => {
+    return await openDB(DB_NAME, DB_VERSION, {
+      upgrade(db, oldVersion, newVersion, transaction) {
+        console.log(`Upgrading database from version ${oldVersion} to ${newVersion}`);
+        
+        if (!db.objectStoreNames.contains(OCTREE_STORE)) {
+          console.log(`Creating object store: ${OCTREE_STORE}`);
+          db.createObjectStore(OCTREE_STORE, { keyPath: 'id' });
         }
-      }
-
-      db.close();
-    };
-
-    initDB();
-  }, [octreeRoot, glbMeshes]);
-
-  return null; // This component doesn't render anything
-};
-
-export default OctreeAndGlbStore;
+        
+        if (!db.objectStoreNames.contains(GLB_STORE)) {
+          console.log(`Creating object store: ${GLB_STORE}`);
+          db.createObjectStore(GLB_STORE, { keyPath: 'id' });
+        }
+      },
+    });
+  };
+  
+  const OctreeAndGlbStore = ({ octreeRoot, glbMeshes }) => {
+    useEffect(() => {
+      const storeData = async () => {
+        try {
+          const db = await initializeDatabase();
+  
+          // Check if the stores exist before creating transactions
+          if (!db.objectStoreNames.contains(OCTREE_STORE) || !db.objectStoreNames.contains(GLB_STORE)) {
+            console.error('Required object stores are missing. Database might not be properly initialized.');
+            return;
+          }
+  
+          // Store Octree nodes
+          if (octreeRoot) {
+            const octreeTx = db.transaction(OCTREE_STORE, 'readwrite');
+            const octreeStore = octreeTx.objectStore(OCTREE_STORE);
+            
+            let nodeIndex = 0;
+            const storeNode = async (node) => {
+              const serializedNode = serializeNode(node, nodeIndex++);
+              await octreeStore.put(serializedNode);
+              if (node.children) {
+                for (const child of node.children) {
+                  await storeNode(child);
+                }
+              }
+            };
+            await storeNode(octreeRoot);
+            await octreeTx.done;
+          }
+  
+          // Store GLB meshes
+          if (glbMeshes && glbMeshes.length > 0) {
+            const glbTx = db.transaction(GLB_STORE, 'readwrite');
+            const glbStore = glbTx.objectStore(GLB_STORE);
+            for (let i = 0; i < glbMeshes.length; i++) {
+              const serializedMesh = serializeMesh(glbMeshes[i], i);
+              await glbStore.put(serializedMesh);
+            }
+            await glbTx.done;
+          }
+  
+          db.close();
+        } catch (error) {
+          console.error('Error in OctreeAndGlbStore:', error);
+        }
+      };
+  
+      storeData();
+    }, [octreeRoot, glbMeshes]);
+  
+    return null; // This component doesn't render anything
+  };
+  
+  export default OctreeAndGlbStore;
